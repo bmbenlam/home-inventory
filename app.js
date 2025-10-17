@@ -18,6 +18,7 @@ function App() {
     const [userEmail, setUserEmail] = useState('');
     const tokenClientRef = useRef(null);
     const accessTokenRef = useRef(null);
+    const confirmationTimeoutRef = useRef(null);
 
     console.log('📊 State:', {
         isSignedIn,
@@ -29,6 +30,7 @@ function App() {
 
     // Load saved token on mount
     useEffect(() => {
+        console.log('🔍 Checking for saved token...');
         const savedToken = localStorage.getItem('googleAccessToken');
         const savedExpiry = localStorage.getItem('googleTokenExpiry');
         
@@ -38,18 +40,19 @@ function App() {
             
             // Check if token is still valid (not expired)
             if (now < expiryTime) {
-                console.log('✅ Found valid saved token');
+                console.log('✅ Found valid saved token, auto-signing in');
                 accessTokenRef.current = savedToken;
                 setIsSignedIn(true);
-                setLoading(true);
-                // Token is valid, will fetch data via effect
+                // Don't set loading here, let fetchData handle it
             } else {
                 console.log('⏰ Saved token expired, clearing');
                 localStorage.removeItem('googleAccessToken');
                 localStorage.removeItem('googleTokenExpiry');
+                setLoading(false);
             }
         } else {
             console.log('❌ No saved token found');
+            setLoading(false);
         }
     }, []);
 
@@ -72,6 +75,14 @@ function App() {
                     if (tokenResponse.access_token) {
                         console.log('✅ Access token received');
                         accessTokenRef.current = tokenResponse.access_token;
+                        
+                        // Save token to localStorage with expiry time
+                        // Google tokens typically expire in 3600 seconds (1 hour)
+                        const expiryTime = Date.now() + (tokenResponse.expires_in || 3600) * 1000;
+                        localStorage.setItem('googleAccessToken', tokenResponse.access_token);
+                        localStorage.setItem('googleTokenExpiry', expiryTime.toString());
+                        console.log('💾 Token saved to localStorage, expires at:', new Date(expiryTime));
+                        
                         setIsSignedIn(true);
                         fetchData();
                     } else if (tokenResponse.error) {
@@ -123,11 +134,18 @@ function App() {
     // Handle sign out
     const handleSignOut = () => {
         console.log('🚪 Signing out');
+        
+        // Clear token from localStorage
+        localStorage.removeItem('googleAccessToken');
+        localStorage.removeItem('googleTokenExpiry');
+        console.log('🗑️ Cleared saved token');
+        
         accessTokenRef.current = null;
         setIsSignedIn(false);
         setItems([]);
         setCurrentItem(null);
         setUserEmail('');
+        
         if (accessTokenRef.current) {
             google.accounts.oauth2.revoke(accessTokenRef.current);
         }
@@ -158,9 +176,21 @@ function App() {
             
             console.log('📡 Response status:', response.status);
             
+            // If 401 (unauthorized), token may be expired - clear it and require re-login
+            if (response.status === 401) {
+                console.log('🔑 Token expired, clearing saved token');
+                localStorage.removeItem('googleAccessToken');
+                localStorage.removeItem('googleTokenExpiry');
+                accessTokenRef.current = null;
+                setIsSignedIn(false);
+                setLoading(false);
+                throw new Error('Session expired. Please sign in again.');
+            }
+            
             if (!response.ok) {
                 const errorText = await response.text();
                 console.error('❌ Response error:', errorText);
+                setLoading(false);
                 throw new Error(`Failed to fetch data: ${response.statusText}`);
             }
 
@@ -290,22 +320,24 @@ function App() {
 
     // Progress bar effect
     useEffect(() => {
-        if (!isSignedIn) return;
+        if (!isSignedIn || items.length === 0) return;
 
         const interval = setInterval(() => {
             setProgress(prev => {
                 const increment = 100 / (config.rotationInterval * 10);
-                return prev + increment >= 100 ? 0 : prev + increment;
+                const newProgress = prev + increment;
+                return newProgress >= 100 ? 0 : newProgress;
             });
         }, 100);
 
         return () => clearInterval(interval);
-    }, [config.rotationInterval, isSignedIn]);
+    }, [config.rotationInterval, isSignedIn, items.length]);
 
     // Initial data fetch
     useEffect(() => {
-        console.log('🎬 Initial fetch effect', { isSignedIn });
-        if (isSignedIn) {
+        console.log('🎬 Initial fetch effect', { isSignedIn, hasToken: !!accessTokenRef.current });
+        if (isSignedIn && accessTokenRef.current) {
+            console.log('📥 Triggering initial fetch');
             fetchData();
             
             const refreshInterval = setInterval(() => {
@@ -313,9 +345,12 @@ function App() {
                 fetchData();
             }, 5 * 60 * 1000);
             
-            return () => clearInterval(refreshInterval);
+            return () => {
+                console.log('🛑 Clearing refresh interval');
+                clearInterval(refreshInterval);
+            };
         }
-    }, [fetchData, isSignedIn]);
+    }, [isSignedIn]);
 
     // Handle settings save
     const handleSaveSettings = (newConfig) => {
@@ -332,16 +367,18 @@ function App() {
 
     // Update body background color
     useEffect(() => {
-        if (currentItem) {
+        if (currentItem && isSignedIn) {
             const daysUntilExpiry = getDaysUntilExpiry(currentItem.expiryDate);
             const expiryInfo = getExpiryStatus(daysUntilExpiry);
             console.log('🎨 Setting background:', expiryInfo.status);
             document.body.className = `bg-${expiryInfo.status}`;
+        } else {
+            document.body.className = '';
         }
         return () => {
             document.body.className = '';
         };
-    }, [currentItem]);
+    }, [currentItem, isSignedIn]);
 
     console.log('🎬 Rendering decision - isSignedIn:', isSignedIn, 'currentItem:', !!currentItem, 'loading:', loading);
 
