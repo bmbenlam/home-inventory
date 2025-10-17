@@ -647,8 +647,18 @@
                     return;
                 }
 
+                if (!config.spreadsheetId) {
+                    setError('Please configure Spreadsheet ID in settings');
+                    setShowSettings(true);
+                    return;
+                }
+
                 if (tokenClientRef.current) {
-                    tokenClientRef.current.requestAccessToken();
+                    try {
+                        tokenClientRef.current.requestAccessToken({ prompt: 'consent' });
+                    } catch (err) {
+                        setError(`Sign in failed: ${err.message}`);
+                    }
                 }
             };
 
@@ -863,6 +873,10 @@
                         <div className="loading-screen">
                             <div className="loading-spinner"></div>
                             <div>Loading inventory...</div>
+                            <div style={{marginTop: '20px', fontSize: '14px', opacity: 0.8}}>
+                                Signed in: {isSignedIn ? 'Yes' : 'No'}<br/>
+                                Items loaded: {items.length}
+                            </div>
                         </div>
                     </div>
                 );
