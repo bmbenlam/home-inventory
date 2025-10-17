@@ -618,13 +618,19 @@
                     tokenClientRef.current = google.accounts.oauth2.initTokenClient({
                         client_id: config.clientId,
                         scope: SCOPES,
+                        ux_mode: 'popup',
                         callback: (tokenResponse) => {
                             if (tokenResponse.access_token) {
                                 accessTokenRef.current = tokenResponse.access_token;
                                 setIsSignedIn(true);
                                 fetchData();
+                            } else if (tokenResponse.error) {
+                                setError(`Authentication failed: ${tokenResponse.error}`);
                             }
                         },
+                        error_callback: (error) => {
+                            setError(`Authentication error: ${error.message || 'Unknown error'}`);
+                        }
                     });
                 };
 
