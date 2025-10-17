@@ -149,7 +149,7 @@ Format: `123456789-abc123def.apps.googleusercontent.com`
 
 ### Google Sheets Setup
 
-**Spreadsheet ID**: `1-WloJiiTvfgqO4DaeMcXLNBER5oWJa23uLMu8IqXC1U`
+**Spreadsheet ID**: `***`
 
 **Sheet Name**: `Master`
 
