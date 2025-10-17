@@ -27,6 +27,32 @@ function App() {
         hasError: !!error
     });
 
+    // Load saved token on mount
+    useEffect(() => {
+        const savedToken = localStorage.getItem('googleAccessToken');
+        const savedExpiry = localStorage.getItem('googleTokenExpiry');
+        
+        if (savedToken && savedExpiry) {
+            const expiryTime = parseInt(savedExpiry);
+            const now = Date.now();
+            
+            // Check if token is still valid (not expired)
+            if (now < expiryTime) {
+                console.log('✅ Found valid saved token');
+                accessTokenRef.current = savedToken;
+                setIsSignedIn(true);
+                setLoading(true);
+                // Token is valid, will fetch data via effect
+            } else {
+                console.log('⏰ Saved token expired, clearing');
+                localStorage.removeItem('googleAccessToken');
+                localStorage.removeItem('googleTokenExpiry');
+            }
+        } else {
+            console.log('❌ No saved token found');
+        }
+    }, []);
+
     // Initialize Google API
     useEffect(() => {
         console.log('🔧 Initialize Google API effect');
