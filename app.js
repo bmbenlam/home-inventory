@@ -9,6 +9,7 @@ function App() {
     const [config, setConfig] = useState(loadConfig());
     const [items, setItems] = useState([]);
     const [currentItem, setCurrentItem] = useState(null);
+    const [tableItems, setTableItems] = useState([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
     const [showSettings, setShowSettings] = useState(false);
@@ -19,6 +20,7 @@ function App() {
     const tokenClientRef = useRef(null);
     const accessTokenRef = useRef(null);
     const confirmationTimeoutRef = useRef(null);
+    const tokenRefreshTimerRef = useRef(null);
 
     console.log('📊 State:', {
         isSignedIn,
@@ -33,16 +35,21 @@ function App() {
         console.log('🔍 Checking for saved token...');
         const savedToken = localStorage.getItem('googleAccessToken');
         const savedExpiry = localStorage.getItem('googleTokenExpiry');
-        
+
         if (savedToken && savedExpiry) {
             const expiryTime = parseInt(savedExpiry);
             const now = Date.now();
-            
+
             // Check if token is still valid (not expired)
             if (now < expiryTime) {
                 console.log('✅ Found valid saved token, auto-signing in');
                 accessTokenRef.current = savedToken;
                 setIsSignedIn(true);
+
+                // Schedule refresh for the remaining time
+                const remainingSeconds = Math.floor((expiryTime - now) / 1000);
+                scheduleTokenRefresh(remainingSeconds);
+
                 // Don't set loading here, let fetchData handle it
             } else {
                 console.log('⏰ Saved token expired, clearing');
@@ -54,7 +61,7 @@ function App() {
             console.log('❌ No saved token found');
             setLoading(false);
         }
-    }, []);
+    }, [scheduleTokenRefresh]);
 
     // Initialize Google API
     useEffect(() => {
@@ -75,14 +82,18 @@ function App() {
                     if (tokenResponse.access_token) {
                         console.log('✅ Access token received');
                         accessTokenRef.current = tokenResponse.access_token;
-                        
+
                         // Save token to localStorage with expiry time
                         // Google tokens typically expire in 3600 seconds (1 hour)
-                        const expiryTime = Date.now() + (tokenResponse.expires_in || 3600) * 1000;
+                        const expiresIn = tokenResponse.expires_in || 3600;
+                        const expiryTime = Date.now() + expiresIn * 1000;
                         localStorage.setItem('googleAccessToken', tokenResponse.access_token);
                         localStorage.setItem('googleTokenExpiry', expiryTime.toString());
                         console.log('💾 Token saved to localStorage, expires at:', new Date(expiryTime));
-                        
+
+                        // Schedule automatic token refresh before expiry
+                        scheduleTokenRefresh(expiresIn);
+
                         setIsSignedIn(true);
                         fetchData();
                     } else if (tokenResponse.error) {
@@ -102,6 +113,32 @@ function App() {
             initializeGoogleAPI();
         }
     }, [config.clientId]);
+
+    // Schedule automatic token refresh
+    const scheduleTokenRefresh = useCallback((expiresIn) => {
+        // Clear any existing refresh timer
+        if (tokenRefreshTimerRef.current) {
+            clearTimeout(tokenRefreshTimerRef.current);
+        }
+
+        // Refresh token 5 minutes before it expires (or halfway through if less than 10 minutes)
+        const refreshTime = Math.max(expiresIn * 1000 - 5 * 60 * 1000, expiresIn * 500);
+
+        console.log(`🔄 Scheduling token refresh in ${Math.floor(refreshTime / 1000)} seconds`);
+
+        tokenRefreshTimerRef.current = setTimeout(() => {
+            console.log('🔄 Auto-refreshing token...');
+            if (tokenClientRef.current && isSignedIn) {
+                try {
+                    // Request new token silently (without user interaction)
+                    tokenClientRef.current.requestAccessToken({ prompt: '' });
+                } catch (err) {
+                    console.error('❌ Auto-refresh failed:', err);
+                    // If silent refresh fails, user will need to sign in again
+                }
+            }
+        }, refreshTime);
+    }, [isSignedIn]);
 
     // Handle sign in
     const handleSignIn = () => {
@@ -134,18 +171,24 @@ function App() {
     // Handle sign out
     const handleSignOut = () => {
         console.log('🚪 Signing out');
-        
+
+        // Clear token refresh timer
+        if (tokenRefreshTimerRef.current) {
+            clearTimeout(tokenRefreshTimerRef.current);
+            tokenRefreshTimerRef.current = null;
+        }
+
         // Clear token from localStorage
         localStorage.removeItem('googleAccessToken');
         localStorage.removeItem('googleTokenExpiry');
         console.log('🗑️ Cleared saved token');
-        
+
         accessTokenRef.current = null;
         setIsSignedIn(false);
         setItems([]);
         setCurrentItem(null);
         setUserEmail('');
-        
+
         if (accessTokenRef.current) {
             google.accounts.oauth2.revoke(accessTokenRef.current);
         }
@@ -221,13 +264,22 @@ function App() {
             console.log('📦 Sample item:', parsedItems[0]);
 
             setItems(parsedItems);
-            
+
             if (parsedItems.length > 0) {
                 const selected = weightedRandomSelect(parsedItems, config.weights);
                 console.log('🎯 Selected item:', selected);
                 setCurrentItem(selected);
+
+                // Select items for table using weighted random selection
+                const numTableRows = Math.min(config.tableRows || 10, parsedItems.length);
+                const selectedTableItems = [];
+                for (let i = 0; i < numTableRows; i++) {
+                    const tableItem = weightedRandomSelect(parsedItems, config.weights);
+                    selectedTableItems.push(tableItem);
+                }
+                setTableItems(selectedTableItems);
             }
-            
+
             setError(null);
             setLoading(false);
             console.log('✅ Data fetch complete');
@@ -239,14 +291,15 @@ function App() {
     }, [config.spreadsheetId, config.sheetName, config.weights]);
 
     // Update quantity in Google Sheets
-    const updateQuantity = async (location, delta) => {
-        console.log(`🔄 Updating ${location} by ${delta}`);
-        if (!currentItem || !accessTokenRef.current) {
-            console.log('❌ No current item or access token');
+    const updateQuantity = async (location, delta, item = null) => {
+        const targetItem = item || currentItem;
+        console.log(`🔄 Updating ${location} by ${delta} for item:`, targetItem?.itemName);
+        if (!targetItem || !accessTokenRef.current) {
+            console.log('❌ No item or access token');
             return;
         }
 
-        const newItem = { ...currentItem };
+        const newItem = { ...targetItem };
         const today = formatDate(new Date());
 
         if (location === 'storage') {
@@ -256,15 +309,26 @@ function App() {
         }
         newItem.lastUpdate = today;
 
-        setCurrentItem(newItem);
-        setItems(items.map(item => 
-            item.rowIndex === newItem.rowIndex ? newItem : item
+        // Update in items array
+        const updatedItems = items.map(i =>
+            i.rowIndex === newItem.rowIndex ? newItem : i
+        );
+        setItems(updatedItems);
+
+        // Update current item if it's the one being updated
+        if (!item && currentItem?.rowIndex === newItem.rowIndex) {
+            setCurrentItem(newItem);
+        }
+
+        // Update table items if this item is in the table
+        setTableItems(tableItems.map(i =>
+            i.rowIndex === newItem.rowIndex ? newItem : i
         ));
 
         try {
             const range = `${config.sheetName}!D${newItem.rowIndex}:G${newItem.rowIndex}`;
             const url = `https://sheets.googleapis.com/v4/spreadsheets/${config.spreadsheetId}/values/${range}?valueInputOption=RAW`;
-            
+
             const values = [[
                 newItem.quantityStorage.toString(),
                 newItem.quantityKitchen.toString(),
@@ -309,6 +373,16 @@ function App() {
             const selected = weightedRandomSelect(items, config.weights);
             console.log('🔄 Rotating to:', selected.itemName);
             setCurrentItem(selected);
+
+            // Update table items with new random selection
+            const numTableRows = Math.min(config.tableRows || 10, items.length);
+            const selectedTableItems = [];
+            for (let i = 0; i < numTableRows; i++) {
+                const tableItem = weightedRandomSelect(items, config.weights);
+                selectedTableItems.push(tableItem);
+            }
+            setTableItems(selectedTableItems);
+
             setProgress(0);
         }, config.rotationInterval * 1000);
 
@@ -567,7 +641,7 @@ function App() {
     const expiryInfo = getExpiryStatus(daysUntilExpiry);
 
     return (
-        <div className="dashboard-container">
+        <div className="dashboard-container landscape-layout">
             {userEmail && (
                 <div className="user-info">
                     <span>{userEmail}</span>
@@ -576,75 +650,85 @@ function App() {
                     </button>
                 </div>
             )}
-            
+
             <button className="settings-button" onClick={() => setShowSettings(true)}>
                 ⚙️
             </button>
 
-            <div className="inventory-card">
-                <div className="item-header">
-                    <div className="item-name">{currentItem.itemName}</div>
-                    <div className="item-category">{currentItem.category}</div>
-                    {currentItem.size && <div className="item-size">{currentItem.size}</div>}
-                </div>
-
-                <div className={`expiry-section ${expiryInfo.status}`}>
-                    <div className="expiry-label">{expiryInfo.label}</div>
-                    <div className="expiry-date">
-                        {currentItem.expiryDate ? formatDate(currentItem.expiryDate) : 'No expiry date'}
-                    </div>
-                    {currentItem.expiryDate && (
-                        <div style={{marginTop: '5px', fontSize: '14px'}}>
-                            ({daysUntilExpiry} days {daysUntilExpiry >= 0 ? 'remaining' : 'overdue'})
+            <div className="two-panel-layout">
+                {/* Left Panel - Main Item Display */}
+                <div className="left-panel">
+                    <div className="inventory-card">
+                        <div className="item-header">
+                            <div className="item-name">{currentItem.itemName}</div>
+                            <div className="item-category">{currentItem.category}</div>
+                            {currentItem.size && <div className="item-size">{currentItem.size}</div>}
                         </div>
-                    )}
-                </div>
 
-                <div className="quantities-section">
-                    <div className="quantity-box">
-                        <div className="quantity-label">Storage</div>
-                        <div className="quantity-display">{currentItem.quantityStorage}</div>
-                        <div className="quantity-buttons">
-                            <button 
-                                className="quantity-button"
-                                onClick={() => updateQuantity('storage', -1)}
-                            >
-                                -1
-                            </button>
-                            <button 
-                                className="quantity-button"
-                                onClick={() => updateQuantity('storage', 1)}
-                            >
-                                +1
-                            </button>
+                        <div className={`expiry-section ${expiryInfo.status}`}>
+                            <div className="expiry-label">{expiryInfo.label}</div>
+                            <div className="expiry-date">
+                                {currentItem.expiryDate ? formatDate(currentItem.expiryDate) : 'No expiry date'}
+                            </div>
+                            {currentItem.expiryDate && (
+                                <div style={{marginTop: '5px', fontSize: '14px'}}>
+                                    ({daysUntilExpiry} days {daysUntilExpiry >= 0 ? 'remaining' : 'overdue'})
+                                </div>
+                            )}
                         </div>
-                    </div>
 
-                    <div className="quantity-box">
-                        <div className="quantity-label">Kitchen</div>
-                        <div className="quantity-display">{currentItem.quantityKitchen}</div>
-                        <div className="quantity-buttons">
-                            <button 
-                                className="quantity-button"
-                                onClick={() => updateQuantity('kitchen', -1)}
-                            >
-                                -1
-                            </button>
-                            <button 
-                                className="quantity-button"
-                                onClick={() => updateQuantity('kitchen', 1)}
-                            >
-                                +1
-                            </button>
+                        <div className="quantities-section">
+                            <div className="quantity-box">
+                                <div className="quantity-label">Storage</div>
+                                <div className="quantity-display">{currentItem.quantityStorage}</div>
+                                <div className="quantity-buttons">
+                                    <button
+                                        className="quantity-button"
+                                        onClick={() => updateQuantity('storage', -1)}
+                                    >
+                                        -1
+                                    </button>
+                                    <button
+                                        className="quantity-button"
+                                        onClick={() => updateQuantity('storage', 1)}
+                                    >
+                                        +1
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div className="quantity-box">
+                                <div className="quantity-label">Kitchen</div>
+                                <div className="quantity-display">{currentItem.quantityKitchen}</div>
+                                <div className="quantity-buttons">
+                                    <button
+                                        className="quantity-button"
+                                        onClick={() => updateQuantity('kitchen', -1)}
+                                    >
+                                        -1
+                                    </button>
+                                    <button
+                                        className="quantity-button"
+                                        onClick={() => updateQuantity('kitchen', 1)}
+                                    >
+                                        +1
+                                    </button>
+                                </div>
+                            </div>
                         </div>
+
+                        <div className="last-update">
+                            Last updated: {currentItem.lastUpdate || 'Never'}
+                        </div>
+
+                        <div className="progress-bar" style={{width: `${progress}%`}}></div>
                     </div>
                 </div>
 
-                <div className="last-update">
-                    Last updated: {currentItem.lastUpdate || 'Never'}
+                {/* Right Panel - Inventory Table */}
+                <div className="right-panel">
+                    <InventoryTable items={tableItems} updateQuantity={updateQuantity} />
                 </div>
-
-                <div className="progress-bar" style={{width: `${progress}%`}}></div>
             </div>
 
             {showConfirmation && (
@@ -654,12 +738,94 @@ function App() {
             )}
 
             {showSettings && (
-                <SettingsModal 
+                <SettingsModal
                     config={config}
                     onSave={handleSaveSettings}
                     onClose={() => setShowSettings(false)}
                 />
             )}
+        </div>
+    );
+}
+
+// Inventory Table Component
+function InventoryTable({ items, updateQuantity }) {
+    if (!items || items.length === 0) {
+        return (
+            <div className="inventory-table-container">
+                <div style={{textAlign: 'center', padding: '40px', color: '#666'}}>
+                    No items to display
+                </div>
+            </div>
+        );
+    }
+
+    return (
+        <div className="inventory-table-container">
+            <div className="inventory-table">
+                <div className="table-header">
+                    <div className="table-cell header-cell">Item</div>
+                    <div className="table-cell header-cell">Expiry</div>
+                    <div className="table-cell header-cell">Kitchen</div>
+                    <div className="table-cell header-cell">Storage</div>
+                </div>
+                {items.map((item, index) => {
+                    const daysUntilExpiry = getDaysUntilExpiry(item.expiryDate);
+                    const expiryInfo = getExpiryStatus(daysUntilExpiry);
+
+                    return (
+                        <div key={`${item.rowIndex}-${index}`} className={`table-row row-${expiryInfo.status}`}>
+                            <div className="table-cell item-name-cell" title={item.itemName}>
+                                {item.itemName}
+                            </div>
+                            <div className="table-cell expiry-cell">
+                                <div className="expiry-date-small">
+                                    {item.expiryDate ? formatDate(item.expiryDate) : 'N/A'}
+                                </div>
+                                {item.expiryDate && (
+                                    <div className="expiry-days-small">
+                                        {daysUntilExpiry}d
+                                    </div>
+                                )}
+                            </div>
+                            <div className="table-cell quantity-cell">
+                                <div className="quantity-value">{item.quantityKitchen}</div>
+                                <div className="quantity-controls">
+                                    <button
+                                        className="table-btn btn-minus"
+                                        onClick={() => updateQuantity('kitchen', -1, item)}
+                                    >
+                                        -
+                                    </button>
+                                    <button
+                                        className="table-btn btn-plus"
+                                        onClick={() => updateQuantity('kitchen', 1, item)}
+                                    >
+                                        +
+                                    </button>
+                                </div>
+                            </div>
+                            <div className="table-cell quantity-cell">
+                                <div className="quantity-value">{item.quantityStorage}</div>
+                                <div className="quantity-controls">
+                                    <button
+                                        className="table-btn btn-minus"
+                                        onClick={() => updateQuantity('storage', -1, item)}
+                                    >
+                                        -
+                                    </button>
+                                    <button
+                                        className="table-btn btn-plus"
+                                        onClick={() => updateQuantity('storage', 1, item)}
+                                    >
+                                        +
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    );
+                })}
+            </div>
         </div>
     );
 }
@@ -725,6 +891,18 @@ function SettingsModal({ config, onSave, onClose }) {
                         onChange={e => setLocalConfig({...localConfig, rotationInterval: parseInt(e.target.value) || 60})}
                         min="5"
                         max="300"
+                    />
+                </div>
+
+                <div className="settings-section">
+                    <label className="settings-label">Number of Rows in Table</label>
+                    <input
+                        type="number"
+                        className="settings-input"
+                        value={localConfig.tableRows || 10}
+                        onChange={e => setLocalConfig({...localConfig, tableRows: parseInt(e.target.value) || 10})}
+                        min="1"
+                        max="50"
                     />
                 </div>
 

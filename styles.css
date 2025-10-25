@@ -42,6 +42,36 @@ body.bg-fresh {
     min-height: 400px;
 }
 
+.dashboard-container.landscape-layout {
+    max-width: 100%;
+    width: 95vw;
+    height: 90vh;
+}
+
+.two-panel-layout {
+    display: flex;
+    gap: 20px;
+    height: 100%;
+    width: 100%;
+}
+
+.left-panel {
+    flex: 0 0 45%;
+    min-width: 0;
+}
+
+.right-panel {
+    flex: 1;
+    min-width: 0;
+    background: white;
+    border-radius: 20px;
+    padding: 20px;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+}
+
 .settings-button {
     position: absolute;
     top: -60px;
@@ -476,4 +506,165 @@ body.bg-fresh {
 
 .signout-button:hover {
     background: rgba(255, 255, 255, 0.5);
+}
+
+/* Inventory Table Styles */
+.inventory-table-container {
+    flex: 1;
+    overflow-y: auto;
+    overflow-x: hidden;
+}
+
+.inventory-table {
+    width: 100%;
+}
+
+.table-header {
+    display: grid;
+    grid-template-columns: 2.5fr 1.5fr 1.5fr 1.5fr;
+    gap: 8px;
+    padding: 12px 8px;
+    background: #f8f9fa;
+    border-radius: 10px;
+    margin-bottom: 8px;
+    position: sticky;
+    top: 0;
+    z-index: 10;
+}
+
+.header-cell {
+    font-weight: bold;
+    font-size: 14px;
+    color: #333;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.table-row {
+    display: grid;
+    grid-template-columns: 2.5fr 1.5fr 1.5fr 1.5fr;
+    gap: 8px;
+    padding: 10px 8px;
+    margin-bottom: 6px;
+    border-radius: 8px;
+    transition: all 0.2s;
+    border: 2px solid transparent;
+}
+
+.table-row.row-expired {
+    background: rgba(221, 110, 103, 0.15);
+    border-color: #DD6E67;
+}
+
+.table-row.row-warning {
+    background: rgba(232, 116, 97, 0.15);
+    border-color: #E87461;
+}
+
+.table-row.row-caution {
+    background: rgba(201, 175, 152, 0.15);
+    border-color: #C9AF98;
+}
+
+.table-row.row-good {
+    background: rgba(136, 176, 164, 0.15);
+    border-color: #88B0A4;
+}
+
+.table-row.row-fresh {
+    background: rgba(25, 74, 82, 0.15);
+    border-color: #194A52;
+}
+
+.table-cell {
+    display: flex;
+    align-items: center;
+    font-size: 13px;
+}
+
+.item-name-cell {
+    font-weight: 600;
+    color: #1a1a1a;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.expiry-cell {
+    flex-direction: column;
+    align-items: flex-start;
+    justify-content: center;
+    gap: 2px;
+}
+
+.expiry-date-small {
+    font-size: 12px;
+    color: #333;
+}
+
+.expiry-days-small {
+    font-size: 11px;
+    color: #666;
+    font-weight: 600;
+}
+
+.quantity-cell {
+    flex-direction: column;
+    gap: 4px;
+    align-items: center;
+}
+
+.quantity-value {
+    font-size: 16px;
+    font-weight: bold;
+    color: #1a1a1a;
+}
+
+.quantity-controls {
+    display: flex;
+    gap: 4px;
+}
+
+.table-btn {
+    width: 28px;
+    height: 28px;
+    border: none;
+    border-radius: 6px;
+    font-size: 16px;
+    font-weight: bold;
+    cursor: pointer;
+    transition: all 0.2s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.table-btn.btn-minus {
+    background: #E87461;
+    color: white;
+}
+
+.table-btn.btn-minus:hover {
+    background: #D65E4D;
+    transform: scale(1.1);
+}
+
+.table-btn.btn-plus {
+    background: #88B0A4;
+    color: white;
+}
+
+.table-btn.btn-plus:hover {
+    background: #729688;
+    transform: scale(1.1);
+}
+
+.table-btn:active {
+    transform: scale(0.95);
+}
+
+/* Adjust inventory card for landscape layout */
+.left-panel .inventory-card {
+    height: 100%;
+    min-height: auto;
 }
