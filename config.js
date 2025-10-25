@@ -4,6 +4,7 @@ const DEFAULT_CONFIG = {
     spreadsheetId: '',
     sheetName: 'Master',
     rotationInterval: 60,
+    tableRows: 10,
     weights: {
         expired: 50,
         soon: 25,
