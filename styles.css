@@ -579,7 +579,7 @@ body.bg-fresh {
 .table-cell {
     display: flex;
     align-items: center;
-    font-size: 13px;
+    font-size: 15px;
 }
 
 .item-name-cell {
@@ -588,6 +588,7 @@ body.bg-fresh {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    font-size: 16px;
 }
 
 .expiry-cell {
@@ -598,12 +599,13 @@ body.bg-fresh {
 }
 
 .expiry-date-small {
-    font-size: 12px;
+    font-size: 15px;
     color: #333;
+    font-weight: 600;
 }
 
 .expiry-days-small {
-    font-size: 11px;
+    font-size: 13px;
     color: #666;
     font-weight: 600;
 }
